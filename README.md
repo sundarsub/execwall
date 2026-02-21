@@ -244,8 +244,8 @@ Contributions are welcome. Please ensure:
 
 ## Author
 
-Amar Anand
+Sundar Subramaniam
 
 ## Support
 
-For support and inquiries, email: sentrahelp@gmail.com
+For support and inquiries, contact Amar Anand: sentrahelp@gmail.com
