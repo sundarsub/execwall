@@ -16,7 +16,7 @@ use std::time::Instant;
 /// Sentra - Universal Execution Governance Gateway
 #[derive(Parser, Debug)]
 #[command(name = "sentra")]
-#[command(author = "Sundar Subramaniam")]
+#[command(author = "Amar Anand <sentrahelp@gmail.com>")]
 #[command(version = "0.1.0")]
 #[command(about = "Universal execution governance gateway with argument-level policy enforcement", long_about = None)]
 struct Args {
