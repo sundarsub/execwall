@@ -162,10 +162,12 @@ impl ParsedCommand {
         let trimmed = command.trim();
         let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
 
-        let executable = parts.first()
+        let executable = parts
+            .first()
             .map(|s| {
                 // Extract basename from path
-                Path::new(s).file_name()
+                Path::new(s)
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or(s)
                     .to_string()
@@ -225,26 +227,29 @@ impl PolicyEngine {
 
         for rule in &policy.rules {
             let executable_pattern = match &rule.match_criteria.executable {
-                Some(pattern) => {
-                    Some(Regex::new(pattern)
-                        .map_err(|e| format!("Invalid regex in rule '{}' executable pattern: {}", rule.id, e))?)
-                }
+                Some(pattern) => Some(Regex::new(pattern).map_err(|e| {
+                    format!(
+                        "Invalid regex in rule '{}' executable pattern: {}",
+                        rule.id, e
+                    )
+                })?),
                 None => None,
             };
 
             let args_pattern = match &rule.match_criteria.args_pattern {
-                Some(pattern) => {
-                    Some(Regex::new(pattern)
-                        .map_err(|e| format!("Invalid regex in rule '{}' args_pattern: {}", rule.id, e))?)
-                }
+                Some(pattern) => Some(Regex::new(pattern).map_err(|e| {
+                    format!("Invalid regex in rule '{}' args_pattern: {}", rule.id, e)
+                })?),
                 None => None,
             };
 
             let identity_pattern = match &rule.match_criteria.identity {
-                Some(pattern) => {
-                    Some(Regex::new(pattern)
-                        .map_err(|e| format!("Invalid regex in rule '{}' identity pattern: {}", rule.id, e))?)
-                }
+                Some(pattern) => Some(Regex::new(pattern).map_err(|e| {
+                    format!(
+                        "Invalid regex in rule '{}' identity pattern: {}",
+                        rule.id, e
+                    )
+                })?),
                 None => None,
             };
 
@@ -275,7 +280,11 @@ impl PolicyEngine {
     }
 
     /// Evaluate a command against the policy with identity context
-    pub fn evaluate_with_identity(&self, command: &str, identity: Option<&str>) -> EvaluationResult {
+    pub fn evaluate_with_identity(
+        &self,
+        command: &str,
+        identity: Option<&str>,
+    ) -> EvaluationResult {
         let parsed = ParsedCommand::parse(command);
 
         // Check each rule in order (first match wins)
@@ -296,7 +305,11 @@ impl PolicyEngine {
         EvaluationResult {
             allowed,
             matched_rule: None,
-            reason: if !allowed { Some("No matching rule, default policy is deny".to_string()) } else { None },
+            reason: if !allowed {
+                Some("No matching rule, default policy is deny".to_string())
+            } else {
+                None
+            },
             audit_mode: self.policy.mode == PolicyMode::Audit,
         }
     }
@@ -307,7 +320,12 @@ impl PolicyEngine {
     }
 
     /// Check if a compiled rule matches the parsed command
-    fn rule_matches(&self, rule: &CompiledRule, cmd: &ParsedCommand, identity: Option<&str>) -> bool {
+    fn rule_matches(
+        &self,
+        rule: &CompiledRule,
+        cmd: &ParsedCommand,
+        identity: Option<&str>,
+    ) -> bool {
         // If identity pattern is specified, it must match
         if let Some(ref pattern) = rule.identity_pattern {
             match identity {
@@ -337,7 +355,10 @@ impl PolicyEngine {
         }
 
         // If we have no patterns at all (except identity), the rule doesn't match anything specific
-        if rule.executable_pattern.is_none() && rule.args_pattern.is_none() && rule.identity_pattern.is_none() {
+        if rule.executable_pattern.is_none()
+            && rule.args_pattern.is_none()
+            && rule.identity_pattern.is_none()
+        {
             return false;
         }
 
@@ -415,7 +436,10 @@ rules:
         let result = engine.evaluate("sudo rm -rf /");
         assert!(!result.allowed);
         assert_eq!(result.matched_rule, Some("block_sudo".to_string()));
-        assert_eq!(result.reason, Some("Privilege escalation blocked".to_string()));
+        assert_eq!(
+            result.reason,
+            Some("Privilege escalation blocked".to_string())
+        );
     }
 
     #[test]

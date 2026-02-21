@@ -58,7 +58,8 @@ impl RateLimiter {
         let now = Instant::now();
         let window_start = now - self.window;
 
-        let count = self.timestamps
+        let count = self
+            .timestamps
             .get(identity)
             .map(|ts| ts.iter().filter(|&&t| t > window_start).count() as u32)
             .unwrap_or(0);

@@ -45,10 +45,22 @@ fn main() {
     let args = Args::parse();
 
     // Banner
-    println!("{}", "╔══════════════════════════════════════════════════════════╗".cyan());
-    println!("{}", "║              Sentra - Execution Governance               ║".cyan());
-    println!("{}", "║         Universal Shell with Policy Enforcement          ║".cyan());
-    println!("{}", "╚══════════════════════════════════════════════════════════╝".cyan());
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════╗".cyan()
+    );
+    println!(
+        "{}",
+        "║              Sentra - Execution Governance               ║".cyan()
+    );
+    println!(
+        "{}",
+        "║         Universal Shell with Policy Enforcement          ║".cyan()
+    );
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════╝".cyan()
+    );
     println!();
 
     // Load policy
@@ -90,7 +102,10 @@ fn main() {
     // Check for mode override
     let effective_mode = match &args.mode {
         Some(m) if m == "audit" => {
-            println!("{} Mode overridden to AUDIT (log only, no blocking)", "⚠".yellow());
+            println!(
+                "{} Mode overridden to AUDIT (log only, no blocking)",
+                "⚠".yellow()
+            );
             true
         }
         _ => *engine.mode() == PolicyMode::Audit,
@@ -103,7 +118,11 @@ fn main() {
             l
         }
         Err(e) => {
-            eprintln!("{} Failed to initialize audit log: {}", "Warning:".yellow(), e);
+            eprintln!(
+                "{} Failed to initialize audit log: {}",
+                "Warning:".yellow(),
+                e
+            );
             eprintln!("  Continuing without file logging...");
             AuditLogger::stdout_only()
         }
@@ -117,16 +136,42 @@ fn main() {
 
     // Show mode indicator
     if effective_mode {
-        println!("{}", "═══════════════════════════════════════════════════════════".yellow());
-        println!("{}", "  AUDIT MODE - Commands will be logged but NOT blocked    ".yellow().bold());
-        println!("{}", "═══════════════════════════════════════════════════════════".yellow());
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════".yellow()
+        );
+        println!(
+            "{}",
+            "  AUDIT MODE - Commands will be logged but NOT blocked    "
+                .yellow()
+                .bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════".yellow()
+        );
     } else {
-        println!("{}", "═══════════════════════════════════════════════════════════".cyan());
-        println!("{}", "  ENFORCE MODE - Denied commands will be blocked          ".cyan().bold());
-        println!("{}", "═══════════════════════════════════════════════════════════".cyan());
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════".cyan()
+        );
+        println!(
+            "{}",
+            "  ENFORCE MODE - Denied commands will be blocked          "
+                .cyan()
+                .bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════".cyan()
+        );
     }
     println!();
-    println!("Type {} for help, {} to exit", "'help'".cyan(), "'exit'".cyan());
+    println!(
+        "Type {} for help, {} to exit",
+        "'help'".cyan(),
+        "'exit'".cyan()
+    );
     println!();
 
     // Start interactive shell
@@ -180,7 +225,12 @@ fn main() {
                         println!("  Policy:            {}", engine.info());
                         println!("  Commands executed: {}", commands_executed);
                         println!("  Commands denied:   {}", commands_denied);
-                        println!("  Rate limit usage:  {}/{} (per {} sec)", used, max, rate_limiter.window_seconds());
+                        println!(
+                            "  Rate limit usage:  {}/{} (per {} sec)",
+                            used,
+                            max,
+                            rate_limiter.window_seconds()
+                        );
                         println!("  Audit log:         {}", logger.log_path());
                         println!();
                         continue;
@@ -198,19 +248,23 @@ fn main() {
                         &cwd,
                         Decision::Denied,
                         Some("rate_limit".to_string()),
-                        Some(format!("Rate limit exceeded. Try again in {} seconds", wait_secs)),
+                        Some(format!(
+                            "Rate limit exceeded. Try again in {} seconds",
+                            wait_secs
+                        )),
                         Instant::now(),
                     );
                     commands_denied += 1;
                     println!();
-                    println!(
-                        "{} {}",
-                        "✗ RATE LIMITED:".red().bold(),
-                        input
-                    );
+                    println!("{} {}", "✗ RATE LIMITED:".red().bold(), input);
                     println!("  Wait {} seconds before trying again", wait_secs);
                     let (used, max) = rate_limiter.usage(&identity);
-                    println!("  Usage: {}/{} commands in {} second window", used, max, rate_limiter.window_seconds());
+                    println!(
+                        "  Usage: {}/{} commands in {} second window",
+                        used,
+                        max,
+                        rate_limiter.window_seconds()
+                    );
                     println!();
                     continue;
                 }
@@ -288,11 +342,7 @@ fn main() {
 
                     // Show denial message
                     println!();
-                    println!(
-                        "{} {}",
-                        "✗ DENIED:".red().bold(),
-                        input
-                    );
+                    println!("{} {}", "✗ DENIED:".red().bold(), input);
                     if let Some(rule) = &result.matched_rule {
                         println!("  Rule:   {}", rule.yellow());
                     }
@@ -323,7 +373,10 @@ fn main() {
     // Summary
     println!();
     println!("{}", "Session Summary:".cyan().bold());
-    println!("  Commands executed: {}", commands_executed.to_string().green());
+    println!(
+        "  Commands executed: {}",
+        commands_executed.to_string().green()
+    );
     println!("  Commands denied:   {}", commands_denied.to_string().red());
     println!("  Audit log:         {}", logger.log_path());
     println!();
@@ -364,11 +417,17 @@ fn print_help() {
     println!("{}", "How It Works:".yellow());
     println!("  Every command is evaluated against the policy with argument-level analysis.");
     println!("  - {} commands are executed normally", "Allowed".green());
-    println!("  - {} commands are blocked (enforce mode) or logged (audit mode)", "Denied".red());
+    println!(
+        "  - {} commands are blocked (enforce mode) or logged (audit mode)",
+        "Denied".red()
+    );
     println!();
     println!("{}", "Policy Modes:".yellow());
     println!("  - {}: Denied commands are blocked", "enforce".green());
-    println!("  - {}:   Denied commands are logged but still executed", "audit".yellow());
+    println!(
+        "  - {}:   Denied commands are logged but still executed",
+        "audit".yellow()
+    );
     println!();
     println!("{}", "Policy Features:".yellow());
     println!("  - Argument-level pattern matching (regex)");

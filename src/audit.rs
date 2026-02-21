@@ -268,8 +268,17 @@ mod tests {
 
     #[test]
     fn test_decision_serialization() {
-        assert_eq!(serde_json::to_string(&Decision::Allowed).unwrap(), "\"allowed\"");
-        assert_eq!(serde_json::to_string(&Decision::Denied).unwrap(), "\"denied\"");
-        assert_eq!(serde_json::to_string(&Decision::AuditOnly).unwrap(), "\"auditonly\"");
+        assert_eq!(
+            serde_json::to_string(&Decision::Allowed).unwrap(),
+            "\"allowed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Decision::Denied).unwrap(),
+            "\"denied\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Decision::AuditOnly).unwrap(),
+            "\"auditonly\""
+        );
     }
 }
