@@ -105,54 +105,84 @@ impl SandboxExecutor {
     /// Execute code in sandbox (non-Linux fallback - reduced security)
     #[cfg(not(target_os = "linux"))]
     pub fn execute(&self, request: &SandboxRequest) -> Result<SandboxResponse, Box<dyn std::error::Error>> {
-        use std::process::Command;
+        use std::process::{Command, Stdio};
+        use std::io::Read;
 
         eprintln!("WARNING: Running in reduced-security mode (not Linux)");
 
         let start = Instant::now();
         let code_hash = request.code_hash();
+        let timeout = Duration::from_secs(request.timeout_sec);
 
         // Write code to temp file (use unique name to avoid race conditions)
         let temp_dir = std::env::temp_dir();
         let code_path = temp_dir.join(format!("sentra_{}.py", uuid::Uuid::new_v4()));
         std::fs::write(&code_path, &request.code)?;
 
-        // Run Python directly (no sandbox on non-Linux)
-        let output = Command::new("python3")
+        // Run Python with timeout support
+        let mut child = Command::new("python3")
             .arg("-u")
             .arg("-B")
             .arg(&code_path)
             .current_dir(&request.cwd)
-            .output()?;
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        // Wait with timeout
+        let mut timed_out = false;
+        let status = loop {
+            match child.try_wait()? {
+                Some(status) => break status,
+                None => {
+                    if start.elapsed() > timeout {
+                        let _ = child.kill();
+                        timed_out = true;
+                        break child.wait()?;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+        };
 
         let wall_time = start.elapsed();
+
+        // Read output
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+
+        if let Some(mut out) = child.stdout.take() {
+            let mut buf = vec![0u8; request.max_stdout_bytes + 1];
+            let n = out.read(&mut buf).unwrap_or(0);
+            stdout = String::from_utf8_lossy(&buf[..n.min(request.max_stdout_bytes)]).to_string();
+        }
+        if let Some(mut err) = child.stderr.take() {
+            let mut buf = vec![0u8; request.max_stderr_bytes + 1];
+            let n = err.read(&mut buf).unwrap_or(0);
+            stderr = String::from_utf8_lossy(&buf[..n.min(request.max_stderr_bytes)]).to_string();
+        }
 
         // Cleanup
         let _ = std::fs::remove_file(&code_path);
 
-        let mut stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let mut stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        let truncated_stdout = stdout.len() > request.max_stdout_bytes;
-        let truncated_stderr = stderr.len() > request.max_stderr_bytes;
+        let truncated_stdout = stdout.len() >= request.max_stdout_bytes;
+        let truncated_stderr = stderr.len() >= request.max_stderr_bytes;
 
         if truncated_stdout {
-            stdout.truncate(request.max_stdout_bytes);
             stdout.push_str("\n[TRUNCATED]");
         }
         if truncated_stderr {
-            stderr.truncate(request.max_stderr_bytes);
             stderr.push_str("\n[TRUNCATED]");
         }
 
         Ok(SandboxResponse {
-            exit_code: output.status.code().unwrap_or(-1),
+            exit_code: status.code().unwrap_or(-1),
             stdout,
             stderr,
             wall_time_ms: wall_time.as_millis() as u64,
             peak_mem_mb: 0, // Not tracked on non-Linux
             code_sha256: code_hash,
-            timed_out: false,
+            timed_out,
             truncated_stdout,
             truncated_stderr,
         })

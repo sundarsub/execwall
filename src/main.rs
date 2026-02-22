@@ -19,7 +19,7 @@ use std::time::Instant;
 #[derive(Parser, Debug)]
 #[command(name = "sentra")]
 #[command(author = "Sundar Subramaniam")]
-#[command(version = "0.1.0")]
+#[command(version)]
 #[command(about = "Universal execution governance gateway with argument-level policy enforcement", long_about = None)]
 struct Args {
     /// Path to policy YAML file
