@@ -70,6 +70,7 @@ jobs:
           mkdir -p release-staging
           cp target/${{ matrix.target }}/release/sentra release-staging/
           cp target/${{ matrix.target }}/release/python_runner release-staging/
+          cp target/${{ matrix.target }}/release/openclaw_launcher release-staging/
           cp policy.yaml release-staging/
           cp README.md release-staging/
           cp LICENSE release-staging/
@@ -181,6 +182,7 @@ jobs:
             Each archive contains:
             - `sentra` - Main binary (REPL + API server)
             - `python_runner` - Python sandbox executor
+            - `openclaw_launcher` - Seccomp-locked AI agent launcher
             - `policy.yaml` - Default policy v2.0
             - `README.md` - Documentation
             - `LICENSE` - Apache 2.0
