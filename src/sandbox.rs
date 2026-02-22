@@ -166,7 +166,7 @@ impl SandboxExecutor {
         use std::io::Read;
 
         let start = Instant::now();
-        let _code_hash = request.code_hash();
+        let code_hash = request.code_hash();
 
         // Write code to temp file
         let temp_dir = std::env::temp_dir();
