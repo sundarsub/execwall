@@ -177,6 +177,569 @@ API Request Format:
 }
 ```
 
+## OpenClaw VM Integration Guide
+
+OpenClaw VM is an AI agent execution environment that uses Sentra as its secure code execution backend. This section explains how to build an OpenClaw VM that safely executes AI-generated Python code.
+
+### Architecture Overview
+
+```
++------------------------------------------------------------------+
+|                        OpenClaw VM                                |
+|  +------------------------------------------------------------+  |
+|  |                     AI Agent (LLM)                         |  |
+|  |  - Generates Python code based on user requests            |  |
+|  |  - Interprets execution results                            |  |
+|  |  - Maintains conversation context                          |  |
+|  +---------------------------+--------------------------------+  |
+|                              |                                   |
+|                              v                                   |
+|  +---------------------------+--------------------------------+  |
+|  |                  Code Execution Manager                    |  |
+|  |  - Validates code before execution                         |  |
+|  |  - Manages Sentra connection pool                          |  |
+|  |  - Handles timeouts and retries                            |  |
+|  +---------------------------+--------------------------------+  |
+|                              |                                   |
++------------------------------|-----------------------------------+
+                               | TCP JSON API
+                               v
++------------------------------------------------------------------+
+|                          Sentra                                   |
+|  - Policy enforcement          - Seccomp syscall filtering       |
+|  - Namespace isolation         - Cgroup resource limits          |
+|  - Audit logging               - Code hashing                    |
++------------------------------------------------------------------+
+                               |
+                               v
+                      +----------------+
+                      | python_runner  |
+                      |  (sandboxed)   |
+                      +----------------+
+```
+
+### Quick Start: Python OpenClaw VM Client
+
+Here's a minimal OpenClaw VM implementation in Python:
+
+```python
+#!/usr/bin/env python3
+"""
+OpenClaw VM - Minimal Implementation
+Executes AI-generated Python code via Sentra sandbox
+"""
+
+import socket
+import json
+from typing import Optional
+
+class SentraClient:
+    """Client for Sentra JSON API"""
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 9800):
+        self.host = host
+        self.port = port
+
+    def execute(
+        self,
+        code: str,
+        timeout_sec: int = 30,
+        mem_max_mb: int = 512,
+        cwd: str = "/tmp"
+    ) -> dict:
+        """Execute Python code in Sentra sandbox"""
+        request = {
+            "code": code,
+            "profile": "python_sandbox",
+            "cwd": cwd,
+            "timeout_sec": timeout_sec,
+            "mem_max_mb": mem_max_mb,
+            "pids_max": 64
+        }
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout_sec + 5)  # Network timeout
+            sock.connect((self.host, self.port))
+            sock.sendall(json.dumps(request).encode() + b'\n')
+
+            response = b''
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+
+            return json.loads(response.decode())
+
+
+class OpenClawVM:
+    """
+    OpenClaw VM - AI Agent Execution Environment
+
+    This VM safely executes AI-generated Python code using Sentra
+    as the sandboxed execution backend.
+    """
+
+    def __init__(self, sentra_host: str = "127.0.0.1", sentra_port: int = 9800):
+        self.client = SentraClient(sentra_host, sentra_port)
+        self.execution_history = []
+
+    def run_code(self, code: str, timeout: int = 30) -> dict:
+        """
+        Execute Python code and return results
+
+        Returns:
+            {
+                "success": bool,
+                "output": str,
+                "error": str,
+                "execution_time_ms": int,
+                "timed_out": bool
+            }
+        """
+        result = self.client.execute(code, timeout_sec=timeout)
+
+        # Track execution history
+        self.execution_history.append({
+            "code_hash": result.get("code_sha256", ""),
+            "success": result.get("exit_code", -1) == 0,
+            "timed_out": result.get("timed_out", False)
+        })
+
+        return {
+            "success": result.get("exit_code", -1) == 0,
+            "output": result.get("stdout", ""),
+            "error": result.get("stderr", ""),
+            "execution_time_ms": result.get("wall_time_ms", 0),
+            "timed_out": result.get("timed_out", False)
+        }
+
+    def run_with_ai(self, user_request: str, ai_generate_code) -> str:
+        """
+        Complete AI agent loop:
+        1. AI generates code from user request
+        2. Code executes in Sentra sandbox
+        3. AI interprets results
+
+        Args:
+            user_request: Natural language request
+            ai_generate_code: Function that takes prompt and returns Python code
+        """
+        # Step 1: AI generates code
+        code = ai_generate_code(user_request)
+
+        # Step 2: Execute in sandbox
+        result = self.run_code(code)
+
+        # Step 3: Return formatted result
+        if result["success"]:
+            return f"Execution successful:\n{result['output']}"
+        elif result["timed_out"]:
+            return f"Execution timed out after {result['execution_time_ms']}ms"
+        else:
+            return f"Execution failed:\n{result['error']}"
+
+
+# Example usage
+if __name__ == "__main__":
+    vm = OpenClawVM()
+
+    # Direct code execution
+    result = vm.run_code("""
+import math
+for i in range(1, 6):
+    print(f"sqrt({i}) = {math.sqrt(i):.4f}")
+""")
+
+    print("Success:", result["success"])
+    print("Output:", result["output"])
+    print("Time:", result["execution_time_ms"], "ms")
+```
+
+### Production OpenClaw VM with Connection Pooling
+
+For production use, implement connection pooling and async execution:
+
+```python
+#!/usr/bin/env python3
+"""
+OpenClaw VM - Production Implementation
+Features: Connection pooling, async execution, retry logic
+"""
+
+import asyncio
+import json
+from dataclasses import dataclass
+from typing import Optional, List
+from contextlib import asynccontextmanager
+
+
+@dataclass
+class ExecutionResult:
+    success: bool
+    stdout: str
+    stderr: str
+    exit_code: int
+    wall_time_ms: int
+    peak_mem_mb: int
+    code_sha256: str
+    timed_out: bool
+    truncated: bool
+
+
+class AsyncSentraClient:
+    """Async client with connection pooling for Sentra API"""
+
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 9800,
+        pool_size: int = 10,
+        max_retries: int = 3
+    ):
+        self.host = host
+        self.port = port
+        self.pool_size = pool_size
+        self.max_retries = max_retries
+        self._semaphore = asyncio.Semaphore(pool_size)
+
+    async def execute(
+        self,
+        code: str,
+        timeout_sec: int = 30,
+        mem_max_mb: int = 512,
+        cwd: str = "/tmp"
+    ) -> ExecutionResult:
+        """Execute code with automatic retry on connection failure"""
+
+        request = json.dumps({
+            "code": code,
+            "profile": "python_sandbox",
+            "cwd": cwd,
+            "timeout_sec": timeout_sec,
+            "mem_max_mb": mem_max_mb,
+            "pids_max": 64
+        }).encode() + b'\n'
+
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                async with self._semaphore:
+                    return await self._execute_once(request, timeout_sec)
+            except (ConnectionError, asyncio.TimeoutError) as e:
+                last_error = e
+                await asyncio.sleep(0.1 * (attempt + 1))  # Backoff
+
+        raise ConnectionError(f"Failed after {self.max_retries} attempts: {last_error}")
+
+    async def _execute_once(self, request: bytes, timeout: int) -> ExecutionResult:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(self.host, self.port),
+            timeout=5.0
+        )
+
+        try:
+            writer.write(request)
+            await writer.drain()
+
+            response = await asyncio.wait_for(
+                reader.read(1024 * 1024),  # 1MB max response
+                timeout=timeout + 5
+            )
+
+            data = json.loads(response.decode())
+
+            if "error" in data:
+                return ExecutionResult(
+                    success=False,
+                    stdout="",
+                    stderr=data["error"],
+                    exit_code=-1,
+                    wall_time_ms=0,
+                    peak_mem_mb=0,
+                    code_sha256="",
+                    timed_out=False,
+                    truncated=False
+                )
+
+            return ExecutionResult(
+                success=data.get("exit_code", -1) == 0,
+                stdout=data.get("stdout", ""),
+                stderr=data.get("stderr", ""),
+                exit_code=data.get("exit_code", -1),
+                wall_time_ms=data.get("wall_time_ms", 0),
+                peak_mem_mb=data.get("peak_mem_mb", 0),
+                code_sha256=data.get("code_sha256", ""),
+                timed_out=data.get("timed_out", False),
+                truncated=data.get("truncated_stdout", False) or data.get("truncated_stderr", False)
+            )
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+
+class ProductionOpenClawVM:
+    """Production-ready OpenClaw VM with async execution"""
+
+    def __init__(self, sentra_host: str = "127.0.0.1", sentra_port: int = 9800):
+        self.client = AsyncSentraClient(sentra_host, sentra_port)
+
+    async def execute(self, code: str, timeout: int = 30) -> ExecutionResult:
+        """Execute Python code asynchronously"""
+        return await self.client.execute(code, timeout_sec=timeout)
+
+    async def execute_batch(self, codes: List[str], timeout: int = 30) -> List[ExecutionResult]:
+        """Execute multiple code snippets concurrently"""
+        tasks = [self.execute(code, timeout) for code in codes]
+        return await asyncio.gather(*tasks, return_exceptions=True)
+
+
+# Example async usage
+async def main():
+    vm = ProductionOpenClawVM()
+
+    # Single execution
+    result = await vm.execute("print('Hello from OpenClaw VM!')")
+    print(f"Output: {result.stdout}")
+
+    # Batch execution
+    codes = [
+        "print(1 + 1)",
+        "print(2 * 2)",
+        "print(3 ** 3)"
+    ]
+    results = await vm.execute_batch(codes)
+    for i, r in enumerate(results):
+        print(f"Code {i}: {r.stdout.strip()}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Rust OpenClaw VM Client
+
+For Rust-based OpenClaw VM implementations:
+
+```rust
+//! OpenClaw VM - Rust Client for Sentra
+//!
+//! Add to Cargo.toml:
+//! ```toml
+//! [dependencies]
+//! tokio = { version = "1", features = ["full"] }
+//! serde = { version = "1", features = ["derive"] }
+//! serde_json = "1"
+//! ```
+
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+
+#[derive(Serialize)]
+struct ExecutionRequest {
+    code: String,
+    profile: String,
+    cwd: String,
+    timeout_sec: u64,
+    mem_max_mb: u64,
+    pids_max: u32,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ExecutionResult {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub wall_time_ms: u64,
+    pub peak_mem_mb: u64,
+    pub code_sha256: String,
+    pub timed_out: bool,
+    pub truncated_stdout: bool,
+    pub truncated_stderr: bool,
+}
+
+pub struct OpenClawVM {
+    host: String,
+    port: u16,
+}
+
+impl OpenClawVM {
+    pub fn new(host: &str, port: u16) -> Self {
+        Self {
+            host: host.to_string(),
+            port,
+        }
+    }
+
+    pub async fn execute(&self, code: &str, timeout_sec: u64) -> Result<ExecutionResult, Box<dyn Error>> {
+        let request = ExecutionRequest {
+            code: code.to_string(),
+            profile: "python_sandbox".to_string(),
+            cwd: "/tmp".to_string(),
+            timeout_sec,
+            mem_max_mb: 512,
+            pids_max: 64,
+        };
+
+        let mut stream = TcpStream::connect(format!("{}:{}", self.host, self.port)).await?;
+
+        let request_json = serde_json::to_string(&request)? + "\n";
+        stream.write_all(request_json.as_bytes()).await?;
+
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await?;
+
+        let result: ExecutionResult = serde_json::from_slice(&response)?;
+        Ok(result)
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let vm = OpenClawVM::new("127.0.0.1", 9800);
+
+    let result = vm.execute(r#"
+import math
+print(f"Pi = {math.pi:.10f}")
+"#, 30).await?;
+
+    println!("Success: {}", result.exit_code == 0);
+    println!("Output: {}", result.stdout);
+    println!("Time: {}ms", result.wall_time_ms);
+
+    Ok(())
+}
+```
+
+### Deployment Guide
+
+#### 1. Install Sentra on the Execution Host
+
+```bash
+# Install Sentra
+curl -sSL https://raw.githubusercontent.com/sundarsub/sentra/main/install.sh | sudo bash
+
+# Verify installation
+sentra --version
+```
+
+#### 2. Configure the Sandbox Policy
+
+```bash
+# Edit policy for your use case
+sudo vim /etc/sentra/policy.yaml
+```
+
+Key policy settings for OpenClaw VM:
+
+```yaml
+version: "2.0"
+mode: enforce
+default: deny
+
+profiles:
+  python_sandbox:
+    runner: "/usr/lib/sentra/python_runner"
+    python_bin: "/usr/bin/python3"
+    deny_spawn_processes: true
+    default_network: deny
+
+    fs_defaults:
+      cwd: "/tmp"
+      read_allow:
+        - "/tmp"
+        - "/usr/lib/python3"
+        - "/usr/local/lib/python3"
+      write_allow:
+        - "/tmp"
+      protected_deny:
+        - "/"
+        - "/etc"
+        - "/home"
+        - "/root"
+
+    limits_defaults:
+      timeout_sec: 30
+      cpu_max_percent: 50
+      mem_max_mb: 512
+      pids_max: 64
+      max_stdout_bytes: 200000
+      max_stderr_bytes: 200000
+
+    syscall_profile: restricted
+```
+
+#### 3. Start Sentra API Server
+
+**Option A: Direct execution**
+```bash
+sentra --api --port 9800 --policy /etc/sentra/policy.yaml
+```
+
+**Option B: Systemd service (Linux)**
+```bash
+# Enable and start
+sudo systemctl enable --now sentra-api
+
+# Check status
+sudo systemctl status sentra-api
+```
+
+**Option C: Docker deployment**
+```dockerfile
+FROM ubuntu:22.04
+
+# Install dependencies
+RUN apt-get update && apt-get install -y python3 curl
+
+# Install Sentra
+RUN curl -sSL https://raw.githubusercontent.com/sundarsub/sentra/main/install.sh | bash
+
+# Expose API port
+EXPOSE 9800
+
+# Run Sentra API
+CMD ["sentra", "--api", "--port", "9800", "--policy", "/etc/sentra/policy.yaml"]
+```
+
+#### 4. Connect OpenClaw VM to Sentra
+
+```python
+# In your OpenClaw VM application
+vm = OpenClawVM(
+    sentra_host="sentra-server.internal",  # Or "127.0.0.1" for local
+    sentra_port=9800
+)
+
+# Execute AI-generated code safely
+result = vm.run_code(ai_generated_python_code)
+```
+
+### Security Best Practices
+
+1. **Network Isolation**: Run Sentra on a private network, not exposed to the internet
+2. **Resource Limits**: Set appropriate timeouts and memory limits for your use case
+3. **Audit Logging**: Enable and monitor audit logs for security events
+4. **Policy Review**: Regularly review and update the execution policy
+5. **Principle of Least Privilege**: Only allow necessary filesystem paths and syscalls
+
+### Monitoring and Observability
+
+Monitor Sentra execution via audit logs:
+
+```bash
+# Stream audit logs
+tail -f /var/log/sentra/audit.jsonl | jq .
+
+# Filter for timeouts
+grep '"timed_out":true' /var/log/sentra/audit.jsonl
+
+# Filter for failed executions
+grep -v '"exit_code":0' /var/log/sentra/audit.jsonl
+```
+
 ### Using with systemd (Linux)
 
 ```bash
@@ -544,6 +1107,139 @@ Rate limiting disrupts attack patterns:
 - Automated reconnaissance is throttled
 - Brute-force attempts are slowed
 - Data exfiltration is rate-constrained
+
+## OpenClaw Launcher - Seccomp-Locked AI Agent Execution
+
+The `openclaw_launcher` binary provides a **seccomp-locked execution environment** for AI agents. This implements the defense-in-depth principle: even if the AI agent is compromised, it **cannot directly execute code** - all execution must go through Sentra's API.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  openclaw_launcher                                               │
+│  1. Start Sentra API server                                     │
+│  2. Apply seccomp filter (blocks execve, fork, etc.)            │
+│  3. Exec OpenClaw (this is the LAST exec before lockdown)       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  OpenClaw (AI Agent) - SECCOMP LOCKED                           │
+│  ✗ Cannot execve() - BLOCKED by seccomp                         │
+│  ✗ Cannot fork() - BLOCKED by seccomp                           │
+│  ✗ Cannot run subprocess.run() - BLOCKED                        │
+│  ✓ CAN connect to Sentra API - ALLOWED                          │
+│  ✓ CAN do regular Python computation - ALLOWED                  │
+│                                                                 │
+│  To execute code, must call Sentra API:                         │
+│  → {"code": "...", "profile": "python_sandbox"}                 │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ TCP 127.0.0.1:9999
+┌─────────────────────────────────────────────────────────────────┐
+│  Sentra API Server                                               │
+│  → Receives execution request                                   │
+│  → Spawns python_runner in ANOTHER sandbox                      │
+│  → Returns result to OpenClaw                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Usage
+
+```bash
+# Basic usage - launch OpenClaw in locked environment
+openclaw_launcher --openclaw-bin /path/to/openclaw
+
+# Custom Sentra port
+openclaw_launcher --port 9800 --openclaw-bin /path/to/openclaw
+
+# Verbose output to see security status
+openclaw_launcher -v --openclaw-bin /path/to/openclaw
+
+# Skip Sentra start (if already running)
+openclaw_launcher --skip-sentra --openclaw-bin /path/to/openclaw
+```
+
+### Command Line Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--openclaw-bin` | `/usr/local/bin/openclaw` | Path to AI agent binary |
+| `--sentra-bin` | `/usr/local/bin/sentra` | Path to Sentra binary |
+| `--port` | `9999` | Sentra API port |
+| `--python-runner` | `/usr/lib/sentra/python_runner` | Path to sandbox executor |
+| `--skip-sentra` | `false` | Skip starting Sentra |
+| `-v, --verbose` | `false` | Show detailed security info |
+
+### What Gets Blocked (Linux with seccomp)
+
+When running on Linux with seccomp enabled, the AI agent cannot:
+
+| Operation | Blocked By | What Happens |
+|-----------|------------|--------------|
+| `subprocess.run()` | seccomp (execve) | `OSError: Operation not permitted` |
+| `os.system()` | seccomp (execve) | Returns -1 |
+| `os.fork()` | seccomp (fork) | `OSError: Operation not permitted` |
+| `ctypes.CDLL().execve()` | seccomp | `OSError: Operation not permitted` |
+| `socket.connect("evil.com")` | Network isolation | Connection refused |
+| `open("/etc/passwd")` | Filesystem isolation | `FileNotFoundError` |
+
+### What Remains Allowed
+
+| Operation | Why Allowed |
+|-----------|-------------|
+| Connect to Sentra API | Required for code execution |
+| Regular Python computation | math, json, etc. work normally |
+| File operations in `/work` | Designated working directory |
+| Threading | Required for async operations |
+
+### Full Network Isolation (Optional)
+
+For complete network isolation where OpenClaw can ONLY reach Sentra:
+
+```bash
+# Use the included isolation script (requires sudo/root)
+sudo ./scripts/launch_openclaw_isolated.sh /path/to/openclaw
+
+# Or manually with network namespaces:
+# 1. Create namespace with veth pair to only reach Sentra
+# 2. Run openclaw_launcher inside the namespace
+```
+
+### Security Verification
+
+Test that the lockdown is working:
+
+```bash
+# Run the mock OpenClaw test suite
+./target/release/openclaw_launcher \
+    --openclaw-bin /usr/bin/python3 \
+    -- tests/mock_openclaw.py
+```
+
+Expected output on Linux:
+```
+✓ PASS: subprocess.run() blocked
+✓ PASS: os.system() blocked
+✓ PASS: os.fork() blocked
+✓ PASS: External network blocked
+✓ PASS: Sentra API reachable
+✓ PASS: File operations work
+✓ PASS: Python computation works
+```
+
+### Defense-in-Depth Stack
+
+1. **OpenClaw Seccomp**: Blocks execve, fork, arbitrary network
+2. **Network Namespace**: OpenClaw can ONLY reach Sentra API
+3. **Sentra Policy**: Controls what code can be executed
+4. **python_runner Sandbox**: Another layer of namespace + seccomp + cgroups
+
+Even if the AI agent is fully compromised:
+- It cannot execute code directly (seccomp blocks execve)
+- It cannot phone home (network restricted to Sentra)
+- All code execution goes through Sentra's policy engine
+- Code runs in a separate, isolated sandbox
 
 ## License
 

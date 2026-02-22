@@ -1,6 +1,6 @@
 [package]
 name = "sentra"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 description = "Sentra - Universal Execution Governance Gateway"
 authors = ["Sundar Subramaniam"]
@@ -21,6 +21,10 @@ path = "src/main.rs"
 [[bin]]
 name = "python_runner"
 path = "src/bin/python_runner.rs"
+
+[[bin]]
+name = "openclaw_launcher"
+path = "src/bin/openclaw_launcher.rs"
 
 [dependencies]
 # Serialization
