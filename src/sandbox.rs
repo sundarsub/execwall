@@ -3,7 +3,7 @@
 //! This is the main entry point for sandboxed Python execution.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use sha2::{Sha256, Digest};
 
 /// Request to execute code in sandbox
