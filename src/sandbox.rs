@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use sha2::{Sha256, Digest};
 
+#[cfg(target_os = "linux")]
+use crate::cgroup::{CgroupController, CgroupLimits};
+
 /// Request to execute code in sandbox
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SandboxRequest {
@@ -168,9 +171,9 @@ impl SandboxExecutor {
 
         // Create cgroup for this execution
         let cgroup_name = format!("exec_{}", uuid::Uuid::new_v4());
-        let cgroup = crate::cgroup::CgroupController::create(&cgroup_name)?;
+        let cgroup = CgroupController::create(&cgroup_name)?;
 
-        let limits = crate::cgroup::CgroupLimits {
+        let limits = CgroupLimits {
             memory_max_bytes: request.mem_max_mb * 1024 * 1024,
             cpu_max_percent: 50,
             pids_max: request.pids_max,
