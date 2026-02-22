@@ -101,6 +101,15 @@ else
     log_warn "python_runner not found in release (sandbox features limited)"
 fi
 
+# Install openclaw_launcher binary (for seccomp-locked AI agent execution)
+if [ -f /tmp/sentra-install-tmp/openclaw_launcher ]; then
+    sudo mv /tmp/sentra-install-tmp/openclaw_launcher /usr/local/bin/
+    sudo chmod 755 /usr/local/bin/openclaw_launcher
+    log_info "Installed openclaw_launcher to /usr/local/bin/openclaw_launcher"
+else
+    log_warn "openclaw_launcher not found in release (AI agent lockdown not available)"
+fi
+
 rm -rf /tmp/sentra-install-tmp
 
 # Create configuration directories
@@ -300,6 +309,13 @@ if [ -x "/usr/lib/sentra/python_runner" ]; then
     log_info "python_runner: OK"
 else
     log_warn "python_runner: NOT FOUND (sandbox features limited)"
+fi
+
+# Check openclaw_launcher
+if command -v openclaw_launcher &> /dev/null; then
+    log_info "openclaw_launcher: OK"
+else
+    log_warn "openclaw_launcher: NOT FOUND (AI agent lockdown not available)"
 fi
 
 # Check policy file
