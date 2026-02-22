@@ -3,9 +3,10 @@
 # This policy file defines rules for the Sentra execution gateway.
 # Rules are evaluated in order - first match wins.
 #
-# Version: 1.0
+# Version: 2.0
+# Schema: v2.0 adds profiles, capabilities, and syscall_profiles sections
 
-version: "1.0"
+version: "2.0"
 mode: enforce    # enforce = block denied commands, audit = log only
 default: deny    # deny = block unknown commands, allow = permit unknown
 
@@ -14,10 +15,428 @@ rate_limit:
   max_commands: 60   # Maximum commands per identity per window
   window_seconds: 60 # Sliding window duration in seconds
 
+# =============================================================================
+# v2.0 SANDBOX PROFILES
+# Defines named execution profiles for sandboxed code execution
+# =============================================================================
+
+profiles:
+  python_sandbox:
+    runner: "/usr/lib/sentra/python_runner"
+    python_bin: "/usr/bin/python3"
+    deny_spawn_processes: true
+    default_network: deny
+    fs_defaults:
+      cwd: "/work"
+      read_allow:
+        - "/work"
+        - "/usr/lib/python3"
+        - "/usr/lib/python3.11"
+        - "/usr/lib/python3.12"
+        - "/usr/local/lib/python3"
+      write_allow:
+        - "/work/tmp"
+        - "/work/out"
+        - "/tmp/sentra"
+      protected_deny:
+        - "/"
+        - "/etc"
+        - "/proc"
+        - "/sys"
+        - "/root"
+        - "/home"
+        - "/var"
+    limits_defaults:
+      timeout_sec: 30
+      cpu_max_percent: 50
+      mem_max_mb: 512
+      pids_max: 64
+      max_stdout_bytes: 200000
+      max_stderr_bytes: 200000
+    syscall_profile: python_restricted
+
+  python_sandbox_extended:
+    runner: "/usr/lib/sentra/python_runner"
+    python_bin: "/usr/bin/python3"
+    deny_spawn_processes: false
+    default_network: deny
+    fs_defaults:
+      cwd: "/work"
+      read_allow:
+        - "/work"
+        - "/usr/lib/python3"
+        - "/usr/lib/python3.11"
+        - "/usr/lib/python3.12"
+        - "/usr/local/lib/python3"
+        - "/usr/share"
+      write_allow:
+        - "/work"
+        - "/tmp/sentra"
+      protected_deny:
+        - "/etc/passwd"
+        - "/etc/shadow"
+        - "/etc/sudoers"
+        - "/proc"
+        - "/sys"
+        - "/root"
+    limits_defaults:
+      timeout_sec: 120
+      cpu_max_percent: 80
+      mem_max_mb: 2048
+      pids_max: 128
+      max_stdout_bytes: 500000
+      max_stderr_bytes: 500000
+    syscall_profile: python_standard
+
+# =============================================================================
+# v2.0 CAPABILITIES
+# Defines what sandboxed code execution can do
+# =============================================================================
+
+capabilities:
+  python:
+    type: python
+    profile: python_sandbox
+    allowed_python_argv:
+      - "-c"
+      - "-m"
+      - "script.py"
+
+  python_extended:
+    type: python
+    profile: python_sandbox_extended
+    allowed_python_argv:
+      - "-c"
+      - "-m"
+      - "-u"
+      - "*.py"
+
+  python_readonly:
+    type: python
+    profile: python_sandbox
+    allowed_python_argv:
+      - "-c"
+
+# =============================================================================
+# v2.0 SYSCALL PROFILES
+# Fine-grained syscall filtering for sandboxed execution
+# =============================================================================
+
+syscall_profiles:
+  python_restricted:
+    default: deny
+    allow:
+      # File operations (read-only primarily)
+      - read
+      - pread64
+      - readv
+      - lseek
+      - fstat
+      - stat
+      - lstat
+      - fstatat
+      - access
+      - faccessat
+      - openat
+      - close
+      - fcntl
+      - dup
+      - dup2
+      - dup3
+      - getcwd
+      - readlink
+      - readlinkat
+      - getdents
+      - getdents64
+      # Memory management
+      - mmap
+      - mprotect
+      - munmap
+      - brk
+      - mremap
+      # Process info (read-only)
+      - getpid
+      - getppid
+      - getuid
+      - geteuid
+      - getgid
+      - getegid
+      - gettid
+      - getrusage
+      - times
+      - uname
+      - sysinfo
+      # Signals (limited)
+      - rt_sigaction
+      - rt_sigprocmask
+      - rt_sigreturn
+      - sigaltstack
+      # Time
+      - clock_gettime
+      - clock_getres
+      - gettimeofday
+      - nanosleep
+      # Polling/waiting
+      - poll
+      - ppoll
+      - select
+      - pselect6
+      - epoll_create
+      - epoll_create1
+      - epoll_ctl
+      - epoll_wait
+      - epoll_pwait
+      - futex
+      # Write (controlled)
+      - write
+      - pwrite64
+      - writev
+      # Exit
+      - exit
+      - exit_group
+      # Arch specific
+      - arch_prctl
+      - set_tid_address
+      - set_robust_list
+      - getrandom
+      - prctl
+    deny:
+      # Process creation/execution - BLOCKED
+      - fork
+      - vfork
+      - clone
+      - clone3
+      - execve
+      - execveat
+      # Network - BLOCKED
+      - socket
+      - socketpair
+      - connect
+      - accept
+      - accept4
+      - bind
+      - listen
+      - sendto
+      - recvfrom
+      - sendmsg
+      - recvmsg
+      - shutdown
+      - getsockname
+      - getpeername
+      - setsockopt
+      - getsockopt
+      # Dangerous file operations
+      - unlink
+      - unlinkat
+      - rmdir
+      - rename
+      - renameat
+      - renameat2
+      - link
+      - linkat
+      - symlink
+      - symlinkat
+      - chmod
+      - fchmod
+      - fchmodat
+      - chown
+      - fchown
+      - fchownat
+      - mount
+      - umount2
+      - pivot_root
+      - chroot
+      # IPC - BLOCKED
+      - msgget
+      - msgsnd
+      - msgrcv
+      - semget
+      - semop
+      - shmget
+      - shmat
+      - shmdt
+      - shmctl
+      # Kernel/system - BLOCKED
+      - ptrace
+      - reboot
+      - sethostname
+      - setdomainname
+      - iopl
+      - ioperm
+      - init_module
+      - delete_module
+      - kexec_load
+      - perf_event_open
+      - bpf
+      - userfaultfd
+      - memfd_create
+      - seccomp
+
+  python_standard:
+    default: deny
+    allow:
+      # All from restricted, plus:
+      - read
+      - pread64
+      - readv
+      - lseek
+      - fstat
+      - stat
+      - lstat
+      - fstatat
+      - access
+      - faccessat
+      - openat
+      - close
+      - fcntl
+      - dup
+      - dup2
+      - dup3
+      - getcwd
+      - readlink
+      - readlinkat
+      - getdents
+      - getdents64
+      - mmap
+      - mprotect
+      - munmap
+      - brk
+      - mremap
+      - getpid
+      - getppid
+      - getuid
+      - geteuid
+      - getgid
+      - getegid
+      - gettid
+      - getrusage
+      - times
+      - uname
+      - sysinfo
+      - rt_sigaction
+      - rt_sigprocmask
+      - rt_sigreturn
+      - sigaltstack
+      - clock_gettime
+      - clock_getres
+      - gettimeofday
+      - nanosleep
+      - poll
+      - ppoll
+      - select
+      - pselect6
+      - epoll_create
+      - epoll_create1
+      - epoll_ctl
+      - epoll_wait
+      - epoll_pwait
+      - futex
+      - write
+      - pwrite64
+      - writev
+      - exit
+      - exit_group
+      - arch_prctl
+      - set_tid_address
+      - set_robust_list
+      - getrandom
+      - prctl
+      # Additional for standard profile
+      - clone
+      - clone3
+      - wait4
+      - waitid
+      - pipe
+      - pipe2
+      - mkdir
+      - mkdirat
+      - unlink
+      - unlinkat
+      - rename
+      - renameat
+      - renameat2
+      - ftruncate
+      - truncate
+      - fsync
+      - fdatasync
+    deny:
+      # Network - still blocked
+      - socket
+      - socketpair
+      - connect
+      - accept
+      - accept4
+      - bind
+      - listen
+      - sendto
+      - recvfrom
+      - sendmsg
+      - recvmsg
+      # Execution - blocked
+      - execve
+      - execveat
+      # Dangerous system calls
+      - ptrace
+      - reboot
+      - mount
+      - umount2
+      - pivot_root
+      - chroot
+      - init_module
+      - delete_module
+      - kexec_load
+      - perf_event_open
+      - bpf
+      - userfaultfd
+      - seccomp
+
+# =============================================================================
+# RULES (v1.0 compatible)
+# Rules are evaluated in order - first match wins
+# =============================================================================
+
 rules:
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # DANGEROUS DESTRUCTIVE COMMANDS - ALWAYS DENY (highest priority)
+  # ===========================================================================
+
+  - id: block_rm_rf_root
+    match:
+      executable: "^rm$"
+      args_pattern: ".*-[rf]*\\s+/"
+    effect: deny
+    reason: "Recursive deletion of root filesystem is blocked"
+
+  - id: block_rm_rf_force
+    match:
+      executable: "^rm$"
+      args_pattern: ".*--no-preserve-root"
+    effect: deny
+    reason: "Bypassing root protection is blocked"
+
+  - id: block_dd_of_dev
+    match:
+      executable: "^dd$"
+      args_pattern: "of=/dev/"
+    effect: deny
+    reason: "Writing to block devices is blocked"
+
+  - id: block_mkfs
+    match:
+      executable: "^mkfs"
+    effect: deny
+    reason: "Filesystem creation is blocked"
+
+  - id: block_fdisk_write
+    match:
+      executable: "^(fdisk|parted|gdisk|sgdisk)$"
+      args_pattern: "(?!.*(-l|--list))"
+    effect: deny
+    reason: "Disk partitioning is blocked"
+
+  # ===========================================================================
   # SHELL INJECTION PREVENTION (highest priority - evaluated first)
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: block_shell_injection
     match:
@@ -25,10 +444,10 @@ rules:
     effect: deny
     reason: "Shell metacharacter injection blocked - pipes, command chaining, and subshells are not allowed"
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # VERSION CONTROL - GIT
   # Read-only operations allowed, write operations blocked
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: git_read_only
     match:
@@ -63,20 +482,20 @@ rules:
     effect: deny
     reason: "Destructive git operations (force push, hard reset, clean) are blocked"
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # SAFE READ COMMANDS
   # Common commands for reading/exploring files and system info
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: safe_read_commands
     match:
       executable: "^(ls|cat|head|tail|less|more|grep|egrep|fgrep|rg|ag|ack|find|fd|echo|pwd|whoami|id|date|cal|env|printenv|which|whereis|whatis|file|stat|du|df|wc|sort|uniq|diff|cmp|comm|tr|cut|paste|join|split|tee|xargs|basename|dirname|realpath|readlink|tree|bat|exa|lsd)$"
     effect: allow
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # FILE OPERATIONS
   # Basic file manipulation (with sensitive file protection below)
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: file_ops_basic
     match:
@@ -88,10 +507,10 @@ rules:
       executable: "^(tar|zip|unzip|gzip|gunzip|bzip2|bunzip2|xz|7z|rar)$"
     effect: allow
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # BLOCK SENSITIVE FILE ACCESS
   # Deny access to credentials, secrets, and system files
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: block_env_files
     match:
@@ -123,10 +542,10 @@ rules:
     effect: deny
     reason: "Access to system authentication files is blocked"
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # PERMISSIONS
   # Allow safe permission changes, block dangerous ones
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: chmod_safe
     match:
@@ -154,10 +573,10 @@ rules:
     effect: deny
     reason: "Setuid/setgid bits are blocked"
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # NETWORK - CURL/WGET
   # Allow fetching from safe domains, block internal network access
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: curl_block_internal
     match:
@@ -171,10 +590,10 @@ rules:
       executable: "^(curl|wget|http|httpie)$"
     effect: allow
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # PACKAGE MANAGERS
   # Allow package installation and management
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: npm_allow
     match:
@@ -206,10 +625,10 @@ rules:
       executable: "^(composer|php)$"
     effect: allow
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # BUILD AND TEST TOOLS
   # Allow compilers, build systems, and test runners
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: compilers
     match:
@@ -232,10 +651,10 @@ rules:
       args_pattern: "(test|spec)"
     effect: allow
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # EDITORS AND TOOLS
   # Allow common development tools
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: editors
     match:
@@ -260,10 +679,10 @@ rules:
     effect: deny
     reason: "Privileged Docker operations are blocked"
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # DANGEROUS COMMANDS - ALWAYS DENY
   # Privilege escalation and system administration
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: block_sudo
     match:
@@ -313,10 +732,10 @@ rules:
     effect: deny
     reason: "Mount operations are blocked"
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # DANGEROUS NETWORK TOOLS - ALWAYS DENY
   # Block raw network access and tunneling
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: block_netcat
     match:
@@ -342,9 +761,9 @@ rules:
     effect: deny
     reason: "Network scanning tools are blocked"
 
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
   # MISC UTILITIES
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
 
   - id: misc_safe
     match:

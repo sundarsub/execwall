@@ -1,6 +1,8 @@
+mod api;
 mod audit;
 mod policy;
 mod rate_limit;
+mod sandbox;
 
 use audit::{AuditLogger, Decision};
 use clap::Parser;
@@ -39,10 +41,28 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    /// Run in JSON API mode (TCP server)
+    #[arg(long)]
+    api: bool,
+
+    /// Port for API server (default: 9999)
+    #[arg(long, default_value = "9999")]
+    port: u16,
+
+    /// Path to python_runner binary (for API mode)
+    #[arg(long, default_value = "/usr/lib/sentra/python_runner")]
+    python_runner: String,
 }
 
 fn main() {
     let args = Args::parse();
+
+    // Check if we should run in API mode
+    if args.api {
+        run_api_mode(args.port, &args.python_runner);
+        return;
+    }
 
     // Banner
     println!(
@@ -435,4 +455,36 @@ fn print_help() {
     println!("  - Identity-scoped rule sets");
     println!("  - Comprehensive audit logging");
     println!();
+}
+
+/// Run Sentra in JSON API mode
+fn run_api_mode(port: u16, python_runner_path: &str) {
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════╗".cyan()
+    );
+    println!(
+        "{}",
+        "║              Sentra - JSON API Mode                      ║".cyan()
+    );
+    println!(
+        "{}",
+        "║         Python Sandbox Execution Server                  ║".cyan()
+    );
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════╝".cyan()
+    );
+    println!();
+
+    let server = api::ApiServer::new(port, python_runner_path);
+
+    // Create tokio runtime and run the server
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    runtime.block_on(async {
+        if let Err(e) = server.start().await {
+            eprintln!("{} Failed to start API server: {}", "Error:".red(), e);
+            std::process::exit(1);
+        }
+    });
 }

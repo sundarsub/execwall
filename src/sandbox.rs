@@ -7,7 +7,7 @@ use std::time::Instant;
 use sha2::{Sha256, Digest};
 
 /// Request to execute code in sandbox
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SandboxRequest {
     /// Python code to execute
     pub code: String,
@@ -61,7 +61,7 @@ impl SandboxRequest {
 }
 
 /// Response from sandbox execution
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SandboxResponse {
     /// Process exit code
     pub exit_code: i32,
@@ -96,6 +96,11 @@ impl SandboxExecutor {
         }
     }
 
+    /// Get the python runner path
+    pub fn python_runner_path(&self) -> &str {
+        &self.python_runner_path
+    }
+
     /// Execute code in sandbox (non-Linux fallback - reduced security)
     #[cfg(not(target_os = "linux"))]
     pub fn execute(&self, request: &SandboxRequest) -> Result<SandboxResponse, Box<dyn std::error::Error>> {
@@ -106,9 +111,9 @@ impl SandboxExecutor {
         let start = Instant::now();
         let code_hash = request.code_hash();
 
-        // Write code to temp file
+        // Write code to temp file (use unique name to avoid race conditions)
         let temp_dir = std::env::temp_dir();
-        let code_path = temp_dir.join("sentra_exec.py");
+        let code_path = temp_dir.join(format!("sentra_{}.py", uuid::Uuid::new_v4()));
         std::fs::write(&code_path, &request.code)?;
 
         // Run Python directly (no sandbox on non-Linux)
