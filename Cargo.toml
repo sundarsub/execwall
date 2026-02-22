@@ -10,6 +10,10 @@ keywords = ["security", "shell", "policy", "governance", "audit"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 
+[lib]
+name = "sentra"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sentra"
 path = "src/main.rs"
