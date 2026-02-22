@@ -27,11 +27,6 @@ jobs:
             asset_name: sentra-linux-aarch64
             cross: true
 
-          # macOS x86_64
-          - target: x86_64-apple-darwin
-            os: macos-12
-            asset_name: sentra-macos-x86_64
-
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
             os: macos-14
@@ -179,7 +174,6 @@ jobs:
             |----------|------|-----------------|
             | Linux x86_64 | `sentra-linux-x86_64.tar.gz` | Full (namespaces, seccomp, cgroups) |
             | Linux ARM64 | `sentra-linux-aarch64.tar.gz` | Full (namespaces, seccomp, cgroups) |
-            | macOS Intel | `sentra-macos-x86_64.tar.gz` | Policy enforcement only |
             | macOS Apple Silicon | `sentra-macos-aarch64.tar.gz` | Policy enforcement only |
 
             ### Archive Contents
