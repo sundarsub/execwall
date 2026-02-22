@@ -196,6 +196,7 @@ fn apply_namespace_isolation(_request: &SandboxRequest) -> Result<(), Box<dyn st
 /// Drop privileges to reduce attack surface
 #[cfg(target_os = "linux")]
 fn drop_privileges() -> Result<(), Box<dyn std::error::Error>> {
+    use nix::libc;
     use std::ffi::CString;
 
     // Set NO_NEW_PRIVS to prevent privilege escalation

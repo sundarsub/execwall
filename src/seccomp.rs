@@ -112,6 +112,7 @@ pub fn python_restricted_profile() -> SeccompProfile {
 #[cfg(target_os = "linux")]
 mod linux_impl {
     use super::*;
+    use nix::libc;
 
     /// Apply the seccomp filter to the current process.
     /// WARNING: This is IRREMOVABLE once applied.
