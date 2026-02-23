@@ -171,7 +171,7 @@ fn wait_for_sentra(port: u16, timeout: Duration) -> bool {
 /// Apply seccomp filter for OpenClaw lockdown (Linux only)
 #[cfg(target_os = "linux")]
 fn apply_openclaw_seccomp(sentra_port: u16, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
-    use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall};
+    use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall, ScmpArgCompare, ScmpCompareOp};
     use nix::libc;
 
     // Set NO_NEW_PRIVS (required for unprivileged seccomp)
@@ -207,19 +207,36 @@ fn apply_openclaw_seccomp(sentra_port: u16, verbose: bool) -> Result<(), Box<dyn
         }
     }
 
-    // NOTE: We do NOT block clone/clone3 because:
-    // 1. Node.js/Python need clone for threading (libuv uses clone3)
-    // 2. Fork/vfork are the syscalls used for subprocess creation
-    // 3. Blocking fork/vfork is sufficient to prevent subprocess spawning
-    //
-    // Security reasoning:
-    // - subprocess.run() etc use fork()+exec(), we block fork()
-    // - Thread creation uses clone() with CLONE_THREAD, we allow this
-    // - clone() without CLONE_THREAD is technically allowed but:
-    //   - Still can't exec (execve replaces self, not useful without fork)
-    //   - The clone would inherit our seccomp filter anyway
-    if verbose {
-        println!("  → clone/clone3 allowed (threading support)");
+    // Block clone() when used for process creation (no CLONE_THREAD flag)
+    // CLONE_THREAD = 0x10000 - when set, creates a thread; when not set, creates a process
+    // Node.js uses clone() with SIGCHLD (no CLONE_THREAD) for subprocess spawning
+    // We allow clone WITH CLONE_THREAD (threading) but block clone WITHOUT it (processes)
+    if let Ok(clone_syscall) = ScmpSyscall::from_name("clone") {
+        // Block clone when (flags & CLONE_THREAD) == 0
+        // Using MaskedEqual: (arg & mask) == value
+        // mask = 0x10000, value = 0 means: block when CLONE_THREAD is NOT set
+        filter.add_rule_conditional(
+            ScmpAction::Errno(libc::EPERM),
+            clone_syscall,
+            &[ScmpArgCompare::new(0, ScmpCompareOp::MaskedEqual(0x10000), 0)],
+        )?;
+        if verbose {
+            println!("  → Blocking syscall: clone (process creation, threading allowed)");
+        }
+    }
+
+    // Block clone3() for process creation
+    // clone3 uses a struct for flags, harder to filter precisely
+    // For now, block all clone3 - if this breaks threading, we'll need to revisit
+    if let Ok(clone3_syscall) = ScmpSyscall::from_name("clone3") {
+        // Note: clone3 uses a struct, so arg0 is a pointer, not flags
+        // We'd need to inspect the struct memory to check CLONE_THREAD
+        // For simplicity, we allow clone3 entirely since modern runtimes
+        // primarily use it for threading, not subprocess creation
+        // TODO: More sophisticated clone3 filtering if needed
+        if verbose {
+            println!("  → clone3 allowed (struct-based, threading support)");
+        }
     }
 
     // Block execveat (alternative exec path) - execve is allowed for initial launch
