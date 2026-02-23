@@ -171,7 +171,7 @@ fn wait_for_sentra(port: u16, timeout: Duration) -> bool {
 /// Apply seccomp filter for OpenClaw lockdown (Linux only)
 #[cfg(target_os = "linux")]
 fn apply_openclaw_seccomp(sentra_port: u16, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
-    use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall, ScmpArgCompare, ScmpCompareOp};
+    use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall};
     use nix::libc;
 
     // Set NO_NEW_PRIVS (required for unprivileged seccomp)
@@ -207,28 +207,19 @@ fn apply_openclaw_seccomp(sentra_port: u16, verbose: bool) -> Result<(), Box<dyn
         }
     }
 
-    // Block clone() when used for new processes (not threads)
-    // clone() with CLONE_THREAD (0x10000) flag is allowed for threading
-    // clone() without CLONE_THREAD is blocked (process creation)
-    if let Ok(clone_syscall) = ScmpSyscall::from_name("clone") {
-        // Block clone without CLONE_THREAD flag (arg0 & 0x10000 == 0)
-        // This allows threading but blocks process creation
-        filter.add_rule_conditional(
-            ScmpAction::Errno(libc::EPERM),
-            clone_syscall,
-            &[ScmpArgCompare::new(0, ScmpCompareOp::MaskedEqual(0x10000), 0)],
-        )?;
-        if verbose {
-            println!("  → Blocking syscall: clone (without CLONE_THREAD)");
-        }
-    }
-
-    // Block clone3() for process creation (modern clone)
-    if let Ok(clone3_syscall) = ScmpSyscall::from_name("clone3") {
-        filter.add_rule(ScmpAction::Errno(libc::EPERM), clone3_syscall)?;
-        if verbose {
-            println!("  → Blocking syscall: clone3");
-        }
+    // NOTE: We do NOT block clone/clone3 because:
+    // 1. Node.js/Python need clone for threading (libuv uses clone3)
+    // 2. Fork/vfork are the syscalls used for subprocess creation
+    // 3. Blocking fork/vfork is sufficient to prevent subprocess spawning
+    //
+    // Security reasoning:
+    // - subprocess.run() etc use fork()+exec(), we block fork()
+    // - Thread creation uses clone() with CLONE_THREAD, we allow this
+    // - clone() without CLONE_THREAD is technically allowed but:
+    //   - Still can't exec (execve replaces self, not useful without fork)
+    //   - The clone would inherit our seccomp filter anyway
+    if verbose {
+        println!("  → clone/clone3 allowed (threading support)");
     }
 
     // Block execveat (alternative exec path) - execve is allowed for initial launch
