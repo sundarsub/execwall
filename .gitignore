@@ -1,6 +1,17 @@
 # Build artifacts
 /target/
 
+# Sensitive files - NEVER commit
+.env
+.env.*
+*.key
+*.pem
+secrets.yaml
+secrets.json
+credentials.json
+*_credentials.json
+service-account*.json
+
 # Audit logs and runtime data
 *.jsonl
 openrouter_requests.log

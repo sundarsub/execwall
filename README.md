@@ -1,6 +1,76 @@
-# Sentra - Universal Execution Governance Gateway
+# Sentra - OpenClaw Execution Firewall
 
-Sentra is a security-focused execution gateway that provides policy-based command filtering, Python sandbox isolation, and comprehensive audit logging. It acts as a governance layer between AI systems (like OpenClaw VM) and system execution, ensuring that only authorized commands run within defined security boundaries.
+**Seccomp-locked AI agent sandbox with policy-enforced command governance, WhatsApp/Telegram integration, and Python isolation.**
+
+Deploy a secure AI agent execution environment on **Oracle Cloud Free Tier** - run your own WhatsApp AI assistant with enterprise-grade security.
+
+[![Deploy on Oracle Cloud](https://img.shields.io/badge/Deploy-Oracle%20Cloud%20Free%20Tier-F80000?style=for-the-badge&logo=oracle)](docs/ORACLE_CLOUD_DEPLOYMENT.md)
+
+## What is Sentra?
+
+Sentra is an **execution firewall** for AI agents. It sits between your AI (like OpenClaw) and the operating system, ensuring that only authorized commands run within defined security boundaries.
+
+**Key capabilities:**
+- **Seccomp syscall filtering** - Block dangerous operations at the kernel level
+- **Policy-based command governance** - Regex rules for what commands can execute
+- **Python sandbox isolation** - Namespace + cgroup + seccomp for untrusted code
+- **WhatsApp/Telegram integration** - Secure messaging bot deployments
+- **Audit logging** - Complete visibility into all execution attempts
+
+## Quick Start: Oracle Cloud Free Tier
+
+Deploy your own secure AI assistant for **$0/month** on Oracle Cloud Free Tier:
+
+```bash
+# SSH into your Oracle Cloud VM
+ssh opc@your-vm-ip
+
+# Install Sentra execution firewall
+curl -sSL https://raw.githubusercontent.com/sundarsub/sentra/main/scripts/install-oracle-cloud.sh | sudo bash
+
+# Install OpenClaw
+sudo npm install -g openclaw
+
+# Configure your LLM (Gemini example)
+openclaw config set llm.provider gemini
+openclaw config set llm.apiKey "YOUR_GEMINI_API_KEY"
+
+# Launch with execution firewall
+openclaw_launcher --openclaw-bin /usr/bin/openclaw -- gateway
+```
+
+See the full [Oracle Cloud Deployment Guide](docs/ORACLE_CLOUD_DEPLOYMENT.md) for WhatsApp setup and more.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Your AI Agent (OpenClaw)                      │
+│  • WhatsApp/Telegram bot                                         │
+│  • LLM-powered responses (Gemini, GPT, Claude)                   │
+│  • Code execution capabilities                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Sentra Execution Firewall                       │
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │   Seccomp    │  │   Policy     │  │   Python Sandbox     │   │
+│  │   Profiles   │  │   Engine     │  │   (namespaces)       │   │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
+│                                                                  │
+│  Blocks: fork, exec, ptrace, mount, network (configurable)      │
+│  Allows: read, write, mmap, socket (to approved endpoints)       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │  Linux Kernel   │
+                    └─────────────────┘
+```
+
+## Features
 
 ## Features
 
