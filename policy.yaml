@@ -715,6 +715,11 @@ rules:
       executable: "python_runner$"
     effect: allow
 
+  - id: allow_sandbox_python
+    match:
+      executable: "sandbox-python"
+    effect: allow
+
   - id: interpreters_non_python
     match:
       executable: "^(node|ruby|perl|php|lua|julia|R|Rscript)$"
