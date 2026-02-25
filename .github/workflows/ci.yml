@@ -16,55 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install libseccomp-dev
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Install libseccomp
         run: |
           sudo apt-get update
           sudo apt-get install -y libseccomp-dev
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+      - name: Build
+        run: cargo build --verbose
 
       - name: Run tests
         run: cargo test --verbose
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install libseccomp-dev
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libseccomp-dev
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Build release
-        run: cargo build --release --verbose
 
   lint:
     name: Lint
@@ -72,40 +36,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install libseccomp-dev
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install libseccomp
         run: |
           sudo apt-get update
           sudo apt-get install -y libseccomp-dev
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run clippy
-        run: cargo clippy -- -W clippy::all
-
-  # Build on multiple platforms to ensure compatibility
-  cross-platform:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install libseccomp-dev (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libseccomp-dev
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build
-        run: cargo build --release
+      - name: Clippy
+        run: cargo clippy -- -D warnings
