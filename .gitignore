@@ -4,6 +4,7 @@
 # Sensitive files - NEVER commit
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 secrets.yaml
