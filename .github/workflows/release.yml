@@ -24,7 +24,7 @@ jobs:
             archive: execwall-linux-aarch64.tar.gz
             cross: true
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             archive: execwall-macos-x86_64.tar.gz
           - target: aarch64-apple-darwin
             os: macos-14
@@ -59,15 +59,17 @@ jobs:
         run: |
           sudo dpkg --add-architecture arm64
           sudo sed -i "s/^deb /deb [arch=amd64] /" /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main universe" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main universe" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main universe" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main universe" | sudo tee -a /etc/apt/sources.list
           sudo apt-get update || true
-          sudo apt-get install -y libseccomp-dev:arm64 || echo "Cross libseccomp not critical"
+          sudo apt-get install -y libseccomp-dev:arm64 pkg-config-aarch64-linux-gnu || echo "Cross libseccomp install warning"
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
         env:
           PKG_CONFIG_ALLOW_CROSS: "1"
+          PKG_CONFIG_PATH: "${{ matrix.cross && '/usr/lib/aarch64-linux-gnu/pkgconfig' || '' }}"
+          PKG_CONFIG_SYSROOT_DIR: "${{ matrix.cross && '/' || '' }}"
 
       - name: Package
         shell: bash
