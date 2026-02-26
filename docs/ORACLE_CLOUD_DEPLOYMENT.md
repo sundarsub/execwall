@@ -368,4 +368,4 @@ rm -rf ~/.openclaw/
 ## Support
 
 - GitHub Issues: https://github.com/sundarsub/execwall/issues
-- Email: execwallhelp@gmail.com
+- Email: execwall@gmail.com

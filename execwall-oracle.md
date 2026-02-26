@@ -32,7 +32,7 @@ ssh -i "/Users/sundarsubramaniam/Downloads/ssh-key-2026-02-23 (1).key" opc@150.1
 
 | Setting | Value |
 |---------|-------|
-| Email | execwall@lma.llc |
+| Email | execwall@gmail.com |
 | Provider | Gmail (Google Workspace) |
 | IMAP | imap.gmail.com:993 (TLS) |
 | SMTP | smtp.gmail.com:465 (TLS) |
