@@ -46,6 +46,11 @@ struct Args {
     #[arg(short, long)]
     quiet: bool,
 
+    /// Execute command and exit (like bash -c)
+    /// All arguments after -c are joined to form the command
+    #[arg(short = 'c', value_name = "COMMAND", num_args = 1.., trailing_var_arg = true)]
+    command: Option<Vec<String>>,
+
     /// Run in JSON API mode (TCP server)
     #[arg(long)]
     api: bool,
@@ -65,6 +70,14 @@ fn main() {
     // Check if we should run in API mode
     if args.api {
         run_api_mode(args.port, &args.python_runner);
+        return;
+    }
+
+    // Check if we should run a single command (-c flag, like bash -c)
+    if let Some(ref cmd_parts) = args.command {
+        // Join all command parts into a single command string
+        let cmd = cmd_parts.join(" ");
+        run_single_command(&args, &cmd);
         return;
     }
 
@@ -492,6 +505,121 @@ fn print_help() {
     println!("  - Identity-scoped rule sets");
     println!("  - Comprehensive audit logging");
     println!();
+}
+
+/// Run a single command and exit (like bash -c)
+fn run_single_command(args: &Args, command: &str) {
+    // Load policy
+    let engine = match PolicyEngine::load_from_file(&args.policy) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("execwall: failed to load policy: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Initialize rate limiter
+    let rate_config = engine.rate_limit_config();
+    let mut rate_limiter = RateLimiter::new(rate_config.max_commands, rate_config.window_seconds);
+
+    // Determine identity
+    let identity = args.identity.clone().unwrap_or_else(|| {
+        users::get_current_username()
+            .map(|u| u.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    });
+
+    // Check for mode override
+    let effective_mode = match &args.mode {
+        Some(m) if m == "audit" => true,
+        _ => *engine.mode() == PolicyMode::Audit,
+    };
+
+    // Initialize audit logger (quietly)
+    let logger = AuditLogger::new(&args.log).unwrap_or_else(|_| AuditLogger::stdout_only());
+
+    // Get current working directory
+    let cwd = env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+
+    // Check rate limit
+    if let Err(wait_secs) = rate_limiter.check(&identity) {
+        let parsed = ParsedCommand::parse(command);
+        logger.log_evaluation(
+            command,
+            &parsed.executable,
+            &parsed.args_string,
+            &cwd,
+            Decision::Denied,
+            Some("rate_limit".to_string()),
+            Some(format!("Rate limit exceeded. Try again in {} seconds", wait_secs)),
+            Instant::now(),
+        );
+        eprintln!("execwall: rate limit exceeded, try again in {} seconds", wait_secs);
+        std::process::exit(1);
+    }
+
+    // Evaluate command against policy
+    let eval_start = Instant::now();
+    let result = engine.evaluate_with_identity(command, Some(&identity));
+    let parsed = ParsedCommand::parse(command);
+
+    if result.allowed || effective_mode {
+        // Command is allowed (or we're in audit mode)
+        let decision = if result.allowed {
+            Decision::Allowed
+        } else {
+            Decision::AuditOnly
+        };
+
+        // Log the evaluation
+        let entry = logger.log_evaluation(
+            command,
+            &parsed.executable,
+            &parsed.args_string,
+            &cwd,
+            decision,
+            result.matched_rule.clone(),
+            result.reason.clone(),
+            eval_start,
+        );
+
+        // Record for rate limiting
+        rate_limiter.record(&identity);
+
+        // Execute the command
+        let exec_start = Instant::now();
+        let exit_code = execute_command(command);
+
+        // Log execution completion
+        logger.log_execution_complete(entry, exec_start, exit_code);
+
+        std::process::exit(exit_code);
+    } else {
+        // Command is denied
+        logger.log_evaluation(
+            command,
+            &parsed.executable,
+            &parsed.args_string,
+            &cwd,
+            Decision::Denied,
+            result.matched_rule.clone(),
+            result.reason.clone(),
+            eval_start,
+        );
+
+        if !args.quiet {
+            eprintln!("execwall: command denied: {}", command);
+            if let Some(rule) = &result.matched_rule {
+                eprintln!("  rule: {}", rule);
+            }
+            if let Some(reason) = &result.reason {
+                eprintln!("  reason: {}", reason);
+            }
+        }
+        std::process::exit(1);
+    }
 }
 
 /// Run Execwall in JSON API mode
